@@ -945,9 +945,6 @@ interface LeaderboardEntry {
   created_at: string;
 }
 
-// Milestone thresholds (outside component to avoid re-creation)
-const MILESTONES = [100, 200, 300, 500, 750, 1000];
-
 // Helper functions for localStorage
 const getStoredHighScores = (): Record<number, number> => {
   if (typeof window === 'undefined') return {};
@@ -1013,7 +1010,7 @@ const saveBestCombo = (combo: number) => {
 };
 
 const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
-  const [gameState, setGameState] = useState<'menu' | 'select' | 'playing' | 'over' | 'milestone' | 'leaderboard'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'select' | 'playing' | 'over' | 'leaderboard'>('menu');
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [currentPrompt, setCurrentPrompt] = useState<Prompt | null>(null);
@@ -1033,7 +1030,6 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
   const [leaderboardFilter, setLeaderboardFilter] = useState<number | 'all'>('all');
-  const [lastMilestone, setLastMilestone] = useState(0);
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<Prompt | null>(null);
   const livesRef = useRef(3);
@@ -1131,16 +1127,6 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
         const newScore = prev + 10 + comboBonus;
         scoreRef.current = newScore;
 
-        // Check for milestones
-        const nextMilestone = MILESTONES.find(m => m > lastMilestone && newScore >= m);
-        if (nextMilestone) {
-          setLastMilestone(nextMilestone);
-          // Pause game for milestone
-          setTimeout(() => {
-            setGameState('milestone');
-          }, 200);
-        }
-
         // Only change categories in random mode
         if (selectedCategory === null && newScore % 50 === 0 && newScore > 0) {
           setSpeed(s => Math.min(s + 0.5, 8));
@@ -1179,7 +1165,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
 
     setTimeout(() => setFeedback(null), 150);
     spawnNewPrompt();
-  }, [gameState, currentCategorySet, spawnNewPrompt, combo, score, selectedCategory, maxCombo, lastMilestone, submitScoreToServer]);
+  }, [gameState, currentCategorySet, spawnNewPrompt, combo, score, selectedCategory, maxCombo, submitScoreToServer]);
 
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -1252,7 +1238,6 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
     setSpeed(2);
     setCombo(0);
     setMaxCombo(0);
-    setLastMilestone(0);
     setSelectedCategory(categoryIndex);
     if (categoryIndex !== null) {
       setCategorySetIndex(categoryIndex);
@@ -1261,15 +1246,6 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
     }
     setGameState('playing');
     spawnNewPrompt();
-  };
-
-  const continueFromMilestone = () => {
-    setGameState('playing');
-    spawnNewPrompt();
-  };
-
-  const changeCategoryFromMilestone = () => {
-    setGameState('select');
   };
 
   const goToSelect = () => {
@@ -1467,50 +1443,6 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
             }`}
           >
             MAIN MENU
-          </button>
-        </div>
-      </div>
-    );
-  }
-
-  // MILESTONE SCREEN
-  if (gameState === 'milestone') {
-    const categoryName = selectedCategory !== null
-      ? `${CATEGORY_SETS[selectedCategory].left} vs ${CATEGORY_SETS[selectedCategory].right}`
-      : 'Random Mix';
-
-    return (
-      <div className={`flex h-full w-full flex-col items-center justify-center gap-4 text-center ${isFullscreen ? 'gap-6' : ''}`}>
-        <div className={`${isFullscreen ? 'text-7xl' : 'text-5xl'}`}>🎉</div>
-        <h2 className={`font-bold text-yellow-400 ${isFullscreen ? 'text-3xl' : 'text-xl'}`}>
-          MILESTONE!
-        </h2>
-        <p className={`text-cyan-400 font-bold ${isFullscreen ? 'text-5xl' : 'text-3xl'}`}>
-          {score} PTS
-        </p>
-        <p className={`text-slate-400 ${isFullscreen ? 'text-base' : 'text-xs'}`}>
-          Playing: {categoryName}
-        </p>
-        <p className={`text-slate-500 ${isFullscreen ? 'text-sm' : 'text-[10px]'}`}>
-          Lives: {lives} | Combo: {combo}x | Speed: {speed.toFixed(1)}
-        </p>
-
-        <div className={`flex flex-col gap-3 mt-4 ${isFullscreen ? 'gap-4' : ''}`}>
-          <button
-            onClick={continueFromMilestone}
-            className={`rounded-full bg-gradient-to-r from-green-500 to-emerald-600 font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
-              isFullscreen ? 'px-12 py-4 text-xl' : 'px-8 py-3'
-            }`}
-          >
-            KEEP GOING!
-          </button>
-          <button
-            onClick={changeCategoryFromMilestone}
-            className={`rounded-full bg-slate-700 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-600 active:scale-95 ${
-              isFullscreen ? 'px-12 py-3 text-lg' : 'px-8 py-2 text-sm'
-            }`}
-          >
-            CHANGE CATEGORY
           </button>
         </div>
       </div>
