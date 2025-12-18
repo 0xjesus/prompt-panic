@@ -900,7 +900,58 @@ const STORAGE_KEYS = {
   HIGH_SCORES: 'promptPanic_highScores',
   TOTAL_GAMES: 'promptPanic_totalGames',
   BEST_COMBO: 'promptPanic_bestCombo',
+  USERNAME: 'promptPanic_username',
 };
+
+// Random username generator
+const ADJECTIVES = [
+  'Cool', 'Fast', 'Smart', 'Wild', 'Brave', 'Swift', 'Lucky', 'Epic', 'Mega', 'Super',
+  'Crazy', 'Happy', 'Fuzzy', 'Mighty', 'Noble', 'Quick', 'Rapid', 'Sharp', 'Turbo', 'Ultra',
+  'Cosmic', 'Cyber', 'Digital', 'Electric', 'Neon', 'Pixel', 'Quantum', 'Sonic', 'Hyper', 'Atomic'
+];
+
+const NOUNS = [
+  'Panda', 'Eagle', 'Tiger', 'Wolf', 'Bear', 'Shark', 'Dragon', 'Phoenix', 'Falcon', 'Lion',
+  'Ninja', 'Wizard', 'Knight', 'Pirate', 'Robot', 'Alien', 'Ghost', 'Samurai', 'Viking', 'Warrior',
+  'Coder', 'Gamer', 'Hacker', 'Player', 'Master', 'Legend', 'Champion', 'Hero', 'Star', 'King'
+];
+
+const generateUsername = (): string => {
+  const adj = ADJECTIVES[Math.floor(Math.random() * ADJECTIVES.length)];
+  const noun = NOUNS[Math.floor(Math.random() * NOUNS.length)];
+  const num = Math.floor(Math.random() * 100);
+  return `${adj}${noun}_${num}`;
+};
+
+const getStoredUsername = (): string | null => {
+  if (typeof window === 'undefined') return null;
+  try {
+    return localStorage.getItem(STORAGE_KEYS.USERNAME);
+  } catch {
+    return null;
+  }
+};
+
+const saveUsername = (username: string) => {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(STORAGE_KEYS.USERNAME, username);
+  } catch {
+    // Ignore
+  }
+};
+
+// Leaderboard entry type
+interface LeaderboardEntry {
+  username: string;
+  score: number;
+  category_name: string;
+  max_combo: number;
+  created_at: string;
+}
+
+// Milestone thresholds (outside component to avoid re-creation)
+const MILESTONES = [100, 200, 300, 500, 750, 1000];
 
 // Helper functions for localStorage
 const getStoredHighScores = (): Record<number, number> => {
@@ -967,7 +1018,7 @@ const saveBestCombo = (combo: number) => {
 };
 
 const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
-  const [gameState, setGameState] = useState<'menu' | 'select' | 'playing' | 'over'>('menu');
+  const [gameState, setGameState] = useState<'menu' | 'select' | 'playing' | 'over' | 'milestone' | 'leaderboard'>('menu');
   const [score, setScore] = useState(0);
   const [lives, setLives] = useState(3);
   const [currentPrompt, setCurrentPrompt] = useState<Prompt | null>(null);
@@ -983,16 +1034,75 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
   const [highScores, setHighScores] = useState<Record<number, number>>({});
   const [totalGames, setTotalGames] = useState(0);
   const [bestCombo, setBestCombo] = useState(0);
+  const [username, setUsername] = useState<string>('');
+  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
+  const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [lastMilestone, setLastMilestone] = useState(0);
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<Prompt | null>(null);
   const livesRef = useRef(3);
+  const scoreRef = useRef(0);
 
   // Load stored data on mount
   useEffect(() => {
     setHighScores(getStoredHighScores());
     setTotalGames(getTotalGames());
     setBestCombo(getBestCombo());
+
+    // Load or generate username
+    const stored = getStoredUsername();
+    if (stored) {
+      setUsername(stored);
+    } else {
+      const newUsername = generateUsername();
+      setUsername(newUsername);
+      saveUsername(newUsername);
+    }
   }, []);
+
+  // Fetch leaderboard
+  const fetchLeaderboard = async (categoryIdx?: number) => {
+    setLeaderboardLoading(true);
+    try {
+      const url = categoryIdx !== undefined && categoryIdx !== -1
+        ? `/api/scores?category=${categoryIdx}&limit=20`
+        : '/api/scores?limit=20';
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) {
+        setLeaderboard(data.leaderboard || []);
+      }
+    } catch (error) {
+      console.error('Failed to fetch leaderboard:', error);
+    }
+    setLeaderboardLoading(false);
+  };
+
+  // Submit score to server
+  const submitScoreToServer = useCallback(async (finalScore: number, finalCombo: number) => {
+    if (!username) return;
+
+    const categoryIdx = selectedCategory !== null ? selectedCategory : -1;
+    const categoryName = selectedCategory !== null
+      ? `${CATEGORY_SETS[selectedCategory].left} vs ${CATEGORY_SETS[selectedCategory].right}`
+      : 'Random Mix';
+
+    try {
+      await fetch('/api/scores', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          username,
+          categoryIndex: categoryIdx,
+          categoryName,
+          score: finalScore,
+          maxCombo: finalCombo
+        })
+      });
+    } catch (error) {
+      console.error('Failed to submit score:', error);
+    }
+  }, [username, selectedCategory]);
 
   const currentCategorySet = CATEGORY_SETS[categorySetIndex % CATEGORY_SETS.length];
 
@@ -1023,6 +1133,18 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
       const comboBonus = Math.floor(combo / 5) * 5;
       setScore(prev => {
         const newScore = prev + 10 + comboBonus;
+        scoreRef.current = newScore;
+
+        // Check for milestones
+        const nextMilestone = MILESTONES.find(m => m > lastMilestone && newScore >= m);
+        if (nextMilestone) {
+          setLastMilestone(nextMilestone);
+          // Pause game for milestone
+          setTimeout(() => {
+            setGameState('milestone');
+          }, 200);
+        }
+
         // Only change categories in random mode
         if (selectedCategory === null && newScore % 50 === 0 && newScore > 0) {
           setSpeed(s => Math.min(s + 0.5, 8));
@@ -1043,7 +1165,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
       setTimeout(() => setShake(false), 300);
 
       if (livesRef.current <= 0) {
-        // Save progress
+        // Save progress locally
         const categoryIdx = selectedCategory !== null ? selectedCategory : -1;
         saveHighScore(categoryIdx, score);
         saveBestCombo(maxCombo);
@@ -1052,6 +1174,8 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
         setHighScores(getStoredHighScores());
         setTotalGames(getTotalGames());
         setBestCombo(getBestCombo());
+        // Submit to server
+        submitScoreToServer(score, maxCombo);
         setGameState('over');
         return;
       }
@@ -1059,7 +1183,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
 
     setTimeout(() => setFeedback(null), 150);
     spawnNewPrompt();
-  }, [gameState, currentCategorySet, spawnNewPrompt, combo, score, selectedCategory, maxCombo]);
+  }, [gameState, currentCategorySet, spawnNewPrompt, combo, score, selectedCategory, maxCombo, lastMilestone, submitScoreToServer]);
 
   useEffect(() => {
     if (gameState !== 'playing') return;
@@ -1077,14 +1201,16 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
           setTimeout(() => setFeedback(null), 150);
 
           if (livesRef.current <= 0) {
-            // Save progress
+            // Save progress locally
             const categoryIdx = selectedCategory !== null ? selectedCategory : -1;
-            saveHighScore(categoryIdx, score);
+            saveHighScore(categoryIdx, scoreRef.current);
             saveBestCombo(maxCombo);
             incrementTotalGames();
             setHighScores(getStoredHighScores());
             setTotalGames(getTotalGames());
             setBestCombo(getBestCombo());
+            // Submit to server
+            submitScoreToServer(scoreRef.current, maxCombo);
             setGameState('over');
             return prev;
           }
@@ -1097,7 +1223,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
     }, 50);
 
     return () => clearInterval(interval);
-  }, [gameState, speed, spawnNewPrompt, score, selectedCategory, maxCombo]);
+  }, [gameState, speed, spawnNewPrompt, selectedCategory, maxCombo, submitScoreToServer]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     setTouchStart(e.touches[0].clientX);
@@ -1124,11 +1250,13 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
 
   const startGame = (categoryIndex: number | null = null) => {
     setScore(0);
+    scoreRef.current = 0;
     setLives(3);
     livesRef.current = 3;
     setSpeed(2);
     setCombo(0);
     setMaxCombo(0);
+    setLastMilestone(0);
     setSelectedCategory(categoryIndex);
     if (categoryIndex !== null) {
       setCategorySetIndex(categoryIndex);
@@ -1139,12 +1267,32 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
     spawnNewPrompt();
   };
 
+  const continueFromMilestone = () => {
+    setGameState('playing');
+    spawnNewPrompt();
+  };
+
+  const changeCategoryFromMilestone = () => {
+    setGameState('select');
+  };
+
   const goToSelect = () => {
     setGameState('select');
   };
 
   const goToMenu = () => {
     setGameState('menu');
+  };
+
+  const goToLeaderboard = () => {
+    fetchLeaderboard();
+    setGameState('leaderboard');
+  };
+
+  const regenerateUsername = () => {
+    const newUsername = generateUsername();
+    setUsername(newUsername);
+    saveUsername(newUsername);
   };
 
   const getOverallHighScore = () => {
@@ -1155,43 +1303,54 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
   if (gameState === 'menu') {
     const overallHigh = getOverallHighScore();
     return (
-      <div className={`flex h-full w-full flex-col items-center justify-center text-center overflow-y-auto ${isFullscreen ? 'gap-5 py-8' : 'gap-3 py-4'}`}>
-        <div className={`${isFullscreen ? 'text-7xl' : 'text-4xl'}`}>🧠</div>
-        <h1 className={`bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text font-bold text-transparent ${isFullscreen ? 'text-5xl' : 'text-2xl'}`}>
+      <div className={`flex h-full w-full flex-col items-center justify-center text-center overflow-y-auto ${isFullscreen ? 'gap-4 py-8' : 'gap-2 py-3'}`}>
+        <div className={`${isFullscreen ? 'text-6xl' : 'text-3xl'}`}>🧠</div>
+        <h1 className={`bg-gradient-to-r from-cyan-400 to-purple-500 bg-clip-text font-bold text-transparent ${isFullscreen ? 'text-4xl' : 'text-xl'}`}>
           PROMPT PANIC
         </h1>
 
+        {/* USERNAME */}
+        <div className={`flex items-center gap-2 ${isFullscreen ? 'text-sm' : 'text-[10px]'}`}>
+          <span className="text-slate-500">Playing as:</span>
+          <span className="text-cyan-400 font-bold">{username}</span>
+          <button
+            onClick={regenerateUsername}
+            className="text-slate-500 hover:text-white transition-colors"
+            title="Get new name"
+          >
+            🎲
+          </button>
+        </div>
+
         {/* CLEAR INSTRUCTIONS */}
-        <div className={`bg-slate-800/50 rounded-xl mx-4 ${isFullscreen ? 'p-6 max-w-lg' : 'p-3'}`}>
-          <h2 className={`font-bold text-cyan-400 mb-2 ${isFullscreen ? 'text-xl' : 'text-sm'}`}>HOW TO PLAY</h2>
-          <div className={`text-slate-300 space-y-1 ${isFullscreen ? 'text-base' : 'text-[11px]'}`}>
-            <p><span className="text-yellow-400 font-bold">1.</span> Words fall from the top of the screen</p>
-            <p><span className="text-yellow-400 font-bold">2.</span> Each word belongs to ONE of TWO categories</p>
-            <p><span className="text-yellow-400 font-bold">3.</span> <span className="text-cyan-400 font-semibold">TAP LEFT</span> or <span className="text-purple-400 font-semibold">TAP RIGHT</span> to sort</p>
-            <p><span className="text-yellow-400 font-bold">4.</span> You can also <span className="font-semibold">SWIPE</span> left or right</p>
+        <div className={`bg-slate-800/50 rounded-xl mx-3 ${isFullscreen ? 'p-5 max-w-lg' : 'p-2'}`}>
+          <h2 className={`font-bold text-cyan-400 mb-1 ${isFullscreen ? 'text-lg' : 'text-xs'}`}>HOW TO PLAY</h2>
+          <div className={`text-slate-300 space-y-0.5 ${isFullscreen ? 'text-sm' : 'text-[10px]'}`}>
+            <p><span className="text-yellow-400 font-bold">1.</span> Words fall from the top</p>
+            <p><span className="text-yellow-400 font-bold">2.</span> Each word belongs to ONE category</p>
+            <p><span className="text-yellow-400 font-bold">3.</span> <span className="text-cyan-400">TAP LEFT</span> or <span className="text-purple-400">TAP RIGHT</span> to sort</p>
+            <p><span className="text-yellow-400 font-bold">4.</span> You can also <span className="font-semibold">SWIPE</span></p>
           </div>
-          <div className={`mt-3 pt-3 border-t border-slate-700 text-slate-400 ${isFullscreen ? 'text-sm' : 'text-[10px]'}`}>
-            <p><span className="text-green-400">+10 points</span> for each correct answer</p>
-            <p><span className="text-red-400">-1 life</span> for wrong answers or missed words</p>
-            <p>You have <span className="text-red-400 font-bold">3 lives</span> - do not let them run out!</p>
+          <div className={`mt-2 pt-2 border-t border-slate-700 text-slate-400 ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+            <p><span className="text-green-400">+10 pts</span> correct • <span className="text-red-400">-1 life</span> wrong • <span className="text-red-400 font-bold">3 lives</span> total</p>
           </div>
         </div>
 
         {/* STATS */}
         {(totalGames > 0 || overallHigh > 0) && (
-          <div className={`text-slate-500 ${isFullscreen ? 'text-sm' : 'text-[10px]'}`}>
-            {overallHigh > 0 && <p className="text-cyan-400">Best Score: {overallHigh}</p>}
-            {bestCombo > 0 && <p className="text-yellow-400">Best Combo: {bestCombo}x</p>}
-            {totalGames > 0 && <p>Games Played: {totalGames}</p>}
+          <div className={`text-slate-500 ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+            {overallHigh > 0 && <span className="text-cyan-400 mr-2">Best: {overallHigh}</span>}
+            {bestCombo > 0 && <span className="text-yellow-400 mr-2">Combo: {bestCombo}x</span>}
+            {totalGames > 0 && <span>Games: {totalGames}</span>}
           </div>
         )}
 
         {/* BUTTONS */}
-        <div className={`flex flex-col gap-2 mt-2 ${isFullscreen ? 'gap-3' : ''}`}>
+        <div className={`flex flex-col gap-2 ${isFullscreen ? 'gap-3' : ''}`}>
           <button
             onClick={() => startGame(null)}
             className={`rounded-full bg-gradient-to-r from-cyan-500 to-purple-600 font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
-              isFullscreen ? 'px-12 py-4 text-xl' : 'px-8 py-3'
+              isFullscreen ? 'px-12 py-4 text-xl' : 'px-6 py-2 text-sm'
             }`}
           >
             RANDOM MIX
@@ -1199,14 +1358,22 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
           <button
             onClick={goToSelect}
             className={`rounded-full bg-slate-700 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-600 active:scale-95 ${
-              isFullscreen ? 'px-12 py-3 text-lg' : 'px-8 py-2 text-sm'
+              isFullscreen ? 'px-12 py-3 text-lg' : 'px-6 py-2 text-xs'
             }`}
           >
             CHOOSE CATEGORY
           </button>
+          <button
+            onClick={goToLeaderboard}
+            className={`rounded-full bg-yellow-600 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-yellow-500 active:scale-95 ${
+              isFullscreen ? 'px-12 py-3 text-lg' : 'px-6 py-2 text-xs'
+            }`}
+          >
+            🏆 LEADERBOARD
+          </button>
         </div>
 
-        <p className={`text-slate-600 ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+        <p className={`text-slate-600 ${isFullscreen ? 'text-xs' : 'text-[8px]'}`}>
           10 categories • 600+ prompts
         </p>
       </div>
@@ -1306,6 +1473,131 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
             MAIN MENU
           </button>
         </div>
+      </div>
+    );
+  }
+
+  // MILESTONE SCREEN
+  if (gameState === 'milestone') {
+    const categoryName = selectedCategory !== null
+      ? `${CATEGORY_SETS[selectedCategory].left} vs ${CATEGORY_SETS[selectedCategory].right}`
+      : 'Random Mix';
+
+    return (
+      <div className={`flex h-full w-full flex-col items-center justify-center gap-4 text-center ${isFullscreen ? 'gap-6' : ''}`}>
+        <div className={`${isFullscreen ? 'text-7xl' : 'text-5xl'}`}>🎉</div>
+        <h2 className={`font-bold text-yellow-400 ${isFullscreen ? 'text-3xl' : 'text-xl'}`}>
+          MILESTONE!
+        </h2>
+        <p className={`text-cyan-400 font-bold ${isFullscreen ? 'text-5xl' : 'text-3xl'}`}>
+          {score} PTS
+        </p>
+        <p className={`text-slate-400 ${isFullscreen ? 'text-base' : 'text-xs'}`}>
+          Playing: {categoryName}
+        </p>
+        <p className={`text-slate-500 ${isFullscreen ? 'text-sm' : 'text-[10px]'}`}>
+          Lives: {lives} | Combo: {combo}x | Speed: {speed.toFixed(1)}
+        </p>
+
+        <div className={`flex flex-col gap-3 mt-4 ${isFullscreen ? 'gap-4' : ''}`}>
+          <button
+            onClick={continueFromMilestone}
+            className={`rounded-full bg-gradient-to-r from-green-500 to-emerald-600 font-bold text-white shadow-lg transition-transform hover:scale-105 active:scale-95 ${
+              isFullscreen ? 'px-12 py-4 text-xl' : 'px-8 py-3'
+            }`}
+          >
+            KEEP GOING!
+          </button>
+          <button
+            onClick={changeCategoryFromMilestone}
+            className={`rounded-full bg-slate-700 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-600 active:scale-95 ${
+              isFullscreen ? 'px-12 py-3 text-lg' : 'px-8 py-2 text-sm'
+            }`}
+          >
+            CHANGE CATEGORY
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // LEADERBOARD SCREEN
+  if (gameState === 'leaderboard') {
+    return (
+      <div className={`flex h-full w-full flex-col overflow-hidden ${isFullscreen ? 'p-4' : 'p-2'}`}>
+        <div className="flex items-center justify-between mb-3">
+          <button
+            onClick={goToMenu}
+            className={`text-slate-400 hover:text-white transition-colors ${isFullscreen ? 'text-lg' : 'text-sm'}`}
+          >
+            ← Back
+          </button>
+          <h2 className={`font-bold text-yellow-400 ${isFullscreen ? 'text-xl' : 'text-sm'}`}>
+            🏆 LEADERBOARD
+          </h2>
+          <div className={`${isFullscreen ? 'w-12' : 'w-8'}`}></div>
+        </div>
+
+        {leaderboardLoading ? (
+          <div className="flex-1 flex items-center justify-center">
+            <p className="text-slate-400">Loading...</p>
+          </div>
+        ) : leaderboard.length === 0 ? (
+          <div className="flex-1 flex flex-col items-center justify-center gap-2">
+            <p className={`text-slate-500 ${isFullscreen ? 'text-base' : 'text-sm'}`}>No scores yet!</p>
+            <p className={`text-slate-600 ${isFullscreen ? 'text-sm' : 'text-xs'}`}>Be the first to play!</p>
+          </div>
+        ) : (
+          <div className="flex-1 overflow-y-auto">
+            <div className={`grid gap-2 ${isFullscreen ? 'gap-3' : ''}`}>
+              {leaderboard.map((entry, index) => (
+                <div
+                  key={index}
+                  className={`flex items-center gap-3 rounded-xl bg-slate-800/50 ${
+                    isFullscreen ? 'p-4' : 'p-2'
+                  } ${entry.username === username ? 'border border-cyan-500' : ''}`}
+                >
+                  <div className={`font-bold ${
+                    index === 0 ? 'text-yellow-400' :
+                    index === 1 ? 'text-slate-300' :
+                    index === 2 ? 'text-orange-400' :
+                    'text-slate-500'
+                  } ${isFullscreen ? 'text-2xl w-10' : 'text-lg w-6'}`}>
+                    {index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index + 1}`}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className={`font-bold text-white truncate ${isFullscreen ? 'text-base' : 'text-xs'}`}>
+                      {entry.username}
+                      {entry.username === username && <span className="text-cyan-400 ml-1">(you)</span>}
+                    </p>
+                    <p className={`text-slate-500 truncate ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+                      {entry.category_name}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <p className={`font-bold text-cyan-400 ${isFullscreen ? 'text-xl' : 'text-sm'}`}>
+                      {entry.score}
+                    </p>
+                    {entry.max_combo > 0 && (
+                      <p className={`text-yellow-400 ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+                        {entry.max_combo}x combo
+                      </p>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={() => fetchLeaderboard()}
+          className={`mt-3 rounded-full bg-slate-700 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-600 active:scale-95 ${
+            isFullscreen ? 'py-3 text-base' : 'py-2 text-xs'
+          }`}
+        >
+          🔄 Refresh
+        </button>
       </div>
     );
   }
