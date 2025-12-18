@@ -406,10 +406,10 @@ const CATEGORY_SETS: CategorySet[] = [
       { emoji: '🐚', word: 'Shell', correctCategory: 'SEA' },
       { emoji: '🦪', word: 'Oyster', correctCategory: 'SEA' },
       { emoji: '🪼', word: 'Jellyfish', correctCategory: 'SEA' },
-      { emoji: '🐊', word: 'Crocodile', correctCategory: 'SEA' },
+      { emoji: '🪸', word: 'Coral', correctCategory: 'SEA' },
       { emoji: '🦦', word: 'Sea Otter', correctCategory: 'SEA' },
       { emoji: '🐧', word: 'Penguin', correctCategory: 'SEA' },
-      { emoji: '🦩', word: 'Flamingo', correctCategory: 'SEA' },
+      { emoji: '🐋', word: 'Blue Whale', correctCategory: 'SEA' },
     ],
   },
   // ============================================================================
@@ -437,14 +437,7 @@ const CATEGORY_SETS: CategorySet[] = [
       { emoji: '🍍', word: 'Pineapple', correctCategory: 'FRUIT' },
       { emoji: '🥥', word: 'Coconut', correctCategory: 'FRUIT' },
       { emoji: '🥝', word: 'Kiwi', correctCategory: 'FRUIT' },
-      { emoji: '🍅', word: 'Tomato', correctCategory: 'FRUIT' },
-      { emoji: '🫒', word: 'Olive', correctCategory: 'FRUIT' },
-      { emoji: '🍆', word: 'Eggplant', correctCategory: 'FRUIT' },
-      { emoji: '🌶️', word: 'Pepper', correctCategory: 'FRUIT' },
-      { emoji: '🫑', word: 'Bell Pepper', correctCategory: 'FRUIT' },
-      { emoji: '🥒', word: 'Cucumber', correctCategory: 'FRUIT' },
-      { emoji: '🥑', word: 'Avocado', correctCategory: 'FRUIT' },
-      // VEGETABLES
+      // VEGETABLES (using common understanding, not botanical)
       { emoji: '🥕', word: 'Carrot', correctCategory: 'VEGETABLE' },
       { emoji: '🥔', word: 'Potato', correctCategory: 'VEGETABLE' },
       { emoji: '🧅', word: 'Onion', correctCategory: 'VEGETABLE' },
@@ -452,15 +445,17 @@ const CATEGORY_SETS: CategorySet[] = [
       { emoji: '🌽', word: 'Corn', correctCategory: 'VEGETABLE' },
       { emoji: '🥦', word: 'Broccoli', correctCategory: 'VEGETABLE' },
       { emoji: '🥬', word: 'Lettuce', correctCategory: 'VEGETABLE' },
-      { emoji: '🥗', word: 'Salad', correctCategory: 'VEGETABLE' },
+      { emoji: '🍆', word: 'Eggplant', correctCategory: 'VEGETABLE' },
+      { emoji: '🥒', word: 'Cucumber', correctCategory: 'VEGETABLE' },
+      { emoji: '🍅', word: 'Tomato', correctCategory: 'VEGETABLE' },
+      { emoji: '🫑', word: 'Bell Pepper', correctCategory: 'VEGETABLE' },
+      { emoji: '🌶️', word: 'Chili', correctCategory: 'VEGETABLE' },
       { emoji: '🍄', word: 'Mushroom', correctCategory: 'VEGETABLE' },
-      { emoji: '🌰', word: 'Chestnut', correctCategory: 'VEGETABLE' },
-      { emoji: '🥜', word: 'Peanuts', correctCategory: 'VEGETABLE' },
       { emoji: '🫘', word: 'Beans', correctCategory: 'VEGETABLE' },
-      { emoji: '🌾', word: 'Grain', correctCategory: 'VEGETABLE' },
       { emoji: '🫛', word: 'Peas', correctCategory: 'VEGETABLE' },
-      { emoji: '🥣', word: 'Oatmeal', correctCategory: 'VEGETABLE' },
       { emoji: '🍠', word: 'Sweet Potato', correctCategory: 'VEGETABLE' },
+      { emoji: '🥑', word: 'Avocado', correctCategory: 'VEGETABLE' },
+      { emoji: '🥗', word: 'Salad', correctCategory: 'VEGETABLE' },
     ],
   },
   // ============================================================================
@@ -526,12 +521,12 @@ const CATEGORY_SETS: CategorySet[] = [
       { emoji: '🛕', word: 'Temple', correctCategory: 'BUILDING' },
       { emoji: '🕍', word: 'Synagogue', correctCategory: 'BUILDING' },
       { emoji: '🗼', word: 'Tower', correctCategory: 'BUILDING' },
-      { emoji: '🗽', word: 'Statue', correctCategory: 'BUILDING' },
-      { emoji: '🗿', word: 'Moai', correctCategory: 'BUILDING' },
-      { emoji: '🎡', word: 'Ferris Wheel', correctCategory: 'BUILDING' },
-      { emoji: '🎢', word: 'Roller Coaster', correctCategory: 'BUILDING' },
-      { emoji: '⛲', word: 'Fountain', correctCategory: 'BUILDING' },
-      { emoji: '⛺', word: 'Tent', correctCategory: 'BUILDING' },
+      { emoji: '🏗️', word: 'Construction', correctCategory: 'BUILDING' },
+      { emoji: '🏚️', word: 'Abandoned House', correctCategory: 'BUILDING' },
+      { emoji: '🏛️', word: 'Museum', correctCategory: 'BUILDING' },
+      { emoji: '🏟️', word: 'Stadium', correctCategory: 'BUILDING' },
+      { emoji: '🏘️', word: 'Houses', correctCategory: 'BUILDING' },
+      { emoji: '🏙️', word: 'City', correctCategory: 'BUILDING' },
     ],
   },
   // ============================================================================
@@ -1037,6 +1032,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
   const [username, setUsername] = useState<string>('');
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [leaderboardLoading, setLeaderboardLoading] = useState(false);
+  const [leaderboardFilter, setLeaderboardFilter] = useState<number | 'all'>('all');
   const [lastMilestone, setLastMilestone] = useState(0);
   const gameAreaRef = useRef<HTMLDivElement>(null);
   const promptRef = useRef<Prompt | null>(null);
@@ -1523,9 +1519,18 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
 
   // LEADERBOARD SCREEN
   if (gameState === 'leaderboard') {
+    const handleFilterChange = (filter: number | 'all') => {
+      setLeaderboardFilter(filter);
+      if (filter === 'all') {
+        fetchLeaderboard();
+      } else {
+        fetchLeaderboard(filter);
+      }
+    };
+
     return (
       <div className={`flex h-full w-full flex-col overflow-hidden ${isFullscreen ? 'p-4' : 'p-2'}`}>
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between mb-2">
           <button
             onClick={goToMenu}
             className={`text-slate-400 hover:text-white transition-colors ${isFullscreen ? 'text-lg' : 'text-sm'}`}
@@ -1537,6 +1542,43 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
           </h2>
           <div className={`${isFullscreen ? 'w-12' : 'w-8'}`}></div>
         </div>
+
+        {/* Category Filter Tabs */}
+        <div className={`flex gap-1 overflow-x-auto pb-2 mb-2 ${isFullscreen ? 'gap-2' : ''}`}>
+          <button
+            onClick={() => handleFilterChange('all')}
+            className={`whitespace-nowrap rounded-full px-3 py-1 font-bold transition-all ${
+              isFullscreen ? 'text-sm' : 'text-[10px]'
+            } ${leaderboardFilter === 'all'
+              ? 'bg-yellow-500 text-black'
+              : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+            }`}
+          >
+            🌍 GLOBAL
+          </button>
+          {CATEGORY_SETS.map((cat, idx) => (
+            <button
+              key={idx}
+              onClick={() => handleFilterChange(idx)}
+              className={`whitespace-nowrap rounded-full px-2 py-1 font-bold transition-all ${
+                isFullscreen ? 'text-xs' : 'text-[9px]'
+              } ${leaderboardFilter === idx
+                ? 'bg-cyan-500 text-black'
+                : 'bg-slate-700 text-slate-300 hover:bg-slate-600'
+              }`}
+            >
+              {cat.left.slice(0, 4)}
+            </button>
+          ))}
+        </div>
+
+        {/* Filter label */}
+        <p className={`text-slate-500 text-center mb-2 ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+          {leaderboardFilter === 'all'
+            ? 'Best score per player (all categories)'
+            : `Best scores in: ${CATEGORY_SETS[leaderboardFilter as number].left} vs ${CATEGORY_SETS[leaderboardFilter as number].right}`
+          }
+        </p>
 
         {leaderboardLoading ? (
           <div className="flex-1 flex items-center justify-center">
@@ -1553,7 +1595,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
               {leaderboard.map((entry, index) => (
                 <div
                   key={index}
-                  className={`flex items-center gap-3 rounded-xl bg-slate-800/50 ${
+                  className={`flex items-center gap-2 rounded-xl bg-slate-800/50 ${
                     isFullscreen ? 'p-4' : 'p-2'
                   } ${entry.username === username ? 'border border-cyan-500' : ''}`}
                 >
@@ -1570,9 +1612,11 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
                       {entry.username}
                       {entry.username === username && <span className="text-cyan-400 ml-1">(you)</span>}
                     </p>
-                    <p className={`text-slate-500 truncate ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
-                      {entry.category_name}
-                    </p>
+                    {leaderboardFilter === 'all' && (
+                      <p className={`text-slate-500 truncate ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
+                        {entry.category_name}
+                      </p>
+                    )}
                   </div>
                   <div className="text-right">
                     <p className={`font-bold text-cyan-400 ${isFullscreen ? 'text-xl' : 'text-sm'}`}>
@@ -1580,7 +1624,7 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
                     </p>
                     {entry.max_combo > 0 && (
                       <p className={`text-yellow-400 ${isFullscreen ? 'text-xs' : 'text-[9px]'}`}>
-                        {entry.max_combo}x combo
+                        {entry.max_combo}x
                       </p>
                     )}
                   </div>
@@ -1591,8 +1635,8 @@ const GameSandbox: FC<GameSandboxProps> = ({ isFullscreen = false }) => {
         )}
 
         <button
-          onClick={() => fetchLeaderboard()}
-          className={`mt-3 rounded-full bg-slate-700 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-600 active:scale-95 ${
+          onClick={() => handleFilterChange(leaderboardFilter)}
+          className={`mt-2 rounded-full bg-slate-700 font-bold text-white shadow-lg transition-transform hover:scale-105 hover:bg-slate-600 active:scale-95 ${
             isFullscreen ? 'py-3 text-base' : 'py-2 text-xs'
           }`}
         >

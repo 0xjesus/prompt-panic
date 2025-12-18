@@ -73,29 +73,31 @@ export async function submitScore(
   return result[0];
 }
 
-// Get global leaderboard
+// Get global leaderboard - BEST score per user only
 export async function getLeaderboard(limit: number = 10) {
   const result = await sql`
-    SELECT username, score, category_name, max_combo, created_at
+    SELECT DISTINCT ON (username) username, score, category_name, max_combo, created_at
     FROM scores
-    ORDER BY score DESC
-    LIMIT ${limit}
+    ORDER BY username, score DESC
   `;
 
-  return result;
+  // Sort by score descending and limit
+  const sorted = result.sort((a: any, b: any) => b.score - a.score).slice(0, limit);
+  return sorted;
 }
 
-// Get leaderboard by category
+// Get leaderboard by category - BEST score per user in that category
 export async function getLeaderboardByCategory(categoryIndex: number, limit: number = 10) {
   const result = await sql`
-    SELECT username, score, category_name, max_combo, created_at
+    SELECT DISTINCT ON (username) username, score, category_name, max_combo, created_at
     FROM scores
     WHERE category_index = ${categoryIndex}
-    ORDER BY score DESC
-    LIMIT ${limit}
+    ORDER BY username, score DESC
   `;
 
-  return result;
+  // Sort by score descending and limit
+  const sorted = result.sort((a: any, b: any) => b.score - a.score).slice(0, limit);
+  return sorted;
 }
 
 // Get user's best scores
