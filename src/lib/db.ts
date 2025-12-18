@@ -1,10 +1,6 @@
-import { createPool } from '@vercel/postgres';
+import { neon } from '@neondatabase/serverless';
 
-const pool = createPool({
-  connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL
-});
-
-const sql = pool.sql.bind(pool);
+const sql = neon(process.env.DATABASE_URL!);
 
 // Initialize database tables
 export async function initDB() {
@@ -45,8 +41,8 @@ export async function getOrCreateUser(username: string) {
     SELECT * FROM users WHERE username = ${username}
   `;
 
-  if (existing.rows.length > 0) {
-    return existing.rows[0];
+  if (existing.length > 0) {
+    return existing[0];
   }
 
   // Create new user
@@ -55,7 +51,7 @@ export async function getOrCreateUser(username: string) {
     RETURNING *
   `;
 
-  return result.rows[0];
+  return result[0];
 }
 
 // Submit a score
@@ -74,7 +70,7 @@ export async function submitScore(
     RETURNING *
   `;
 
-  return result.rows[0];
+  return result[0];
 }
 
 // Get global leaderboard
@@ -86,7 +82,7 @@ export async function getLeaderboard(limit: number = 10) {
     LIMIT ${limit}
   `;
 
-  return result.rows;
+  return result;
 }
 
 // Get leaderboard by category
@@ -99,7 +95,7 @@ export async function getLeaderboardByCategory(categoryIndex: number, limit: num
     LIMIT ${limit}
   `;
 
-  return result.rows;
+  return result;
 }
 
 // Get user's best scores
@@ -112,7 +108,7 @@ export async function getUserBestScores(username: string) {
     ORDER BY best_score DESC
   `;
 
-  return result.rows;
+  return result;
 }
 
 // Get user stats
@@ -127,5 +123,5 @@ export async function getUserStats(username: string) {
     WHERE username = ${username}
   `;
 
-  return result.rows[0];
+  return result[0];
 }
