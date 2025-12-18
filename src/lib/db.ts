@@ -1,4 +1,10 @@
-import { sql } from '@vercel/postgres';
+import { createPool } from '@vercel/postgres';
+
+const pool = createPool({
+  connectionString: process.env.DATABASE_URL || process.env.POSTGRES_URL
+});
+
+const sql = pool.sql.bind(pool);
 
 // Initialize database tables
 export async function initDB() {
